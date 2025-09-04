@@ -7,7 +7,7 @@ This repository hosts the current Ethereum
 [proof-of-stake](https://ethereum.org/en/developers/docs/consensus-mechanisms/pos/)
 specifications. Discussions about design rationale and proposed changes can be
 brought up and discussed as issues. Solidified, agreed-upon changes to the
-specifications can be made through pull requests.
+specifications can be made through pull requests
 
 ## Specifications
 
